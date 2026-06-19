@@ -13,7 +13,7 @@ class AgixAos < Formula
   homepage "https://github.com/blewis-maker/homebrew-agix"
   url "https://github.com/blewis-maker/homebrew-agix/releases/download/v0.2.0/agix-aos-0.2.0.tar.gz"
   version "0.2.0"
-  sha256 "8279655aa75f6f0d515806cb2dc51bdee0704f7b65ccbea4107e4675f913c894"
+  sha256 "a6af1226926d5971b1f81e60578c547588a303266a415bdb132a04afd5f1a03b"
   license "Apache-2.0"
 
   depends_on "node"
@@ -40,6 +40,22 @@ class AgixAos < Formula
       #!/bin/bash
       exec "#{Formula["node"].opt_bin}/node" "#{libexec}/bin/agix" "$@"
     SH
+  end
+
+  def caveats
+    <<~EOS
+      Agix AOS runs autonomous AI agents that act on your machine — they can read
+      and write files and run commands. Review agents before running them; agents
+      marked "executor" have the most capability.
+
+      • No API key? Agix uses your installed Claude Code / Codex CLI — so running
+        agents makes real model calls that count against THAT account's usage.
+      • Local-only: state lives in ~/.config/agix and ~/.local/state/agix. No telemetry.
+      • Platform: macOS supported; Linux is beta (unverified end-to-end).
+
+      Get started:  agix
+      Uninstall:    brew uninstall agix-aos  &&  agix uninstall --purge-state
+    EOS
   end
 
   test do

@@ -7,13 +7,13 @@
 # PUBLISH (operator-gated): set `url`/`homepage` to the real public release host,
 # keep `sha256` in sync with the published tarball (the build script prints both),
 # add a matching root LICENSE, then push this formula to the public tap
-# (e.g. `brew tap agix-aos/agix && brew install agix-aos`). See scripts/release/README.md.
+# (e.g. `brew tap blewis-maker/agix && brew install agix-aos`). See scripts/release/README.md.
 class AgixAos < Formula
   desc "Agix AOS — the agix CLI and agent fleet (agentic operating system)"
-  homepage "https://github.com/blewis-maker/homebrew-agix"
-  url "https://github.com/blewis-maker/homebrew-agix/releases/download/v0.2.0/agix-aos-0.2.0.tar.gz"
-  version "0.2.0"
-  sha256 "a6af1226926d5971b1f81e60578c547588a303266a415bdb132a04afd5f1a03b"
+  homepage "https://github.com/blewis-maker/agix-aos-cli"
+  url "https://github.com/blewis-maker/homebrew-agix/releases/download/v0.2.1/agix-aos-0.2.1.tar.gz"
+  version "0.2.1"
+  sha256 "e751c571c716ab9e40813ba06f1b5269ed15d03ce5bed52faae3079c64483b07"
   license "Apache-2.0"
 
   depends_on "node"

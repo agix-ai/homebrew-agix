@@ -3,7 +3,7 @@
 Install the Agix AOS — the `agix` CLI and agent fleet:
 
 ```sh
-brew tap blewis-maker/agix
+brew tap agix-ai/agix
 brew install agix-aos
 ```
 

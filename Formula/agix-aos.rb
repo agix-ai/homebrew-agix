@@ -1,44 +1,75 @@
 # Homebrew formula for Agix AOS — `brew install agix-aos`.
 #
-# Installs the Agix AOS runtime tree (the `agix` CLI + the agent fleet + lib +
-# vendored prod deps) into libexec and exposes `agix` on PATH. Produced by
-# scripts/release/build-agix-tarball.sh; the public-clean gate runs at build time.
+# Agix AOS is the reborn stack: a Go core + the `agix-core` CLI, a TypeScript agent
+# fleet run on Bun (never Node), and a Rust intra-agent bus. This formula installs the
+# source tree (core/ + fleet/ + agents/ + the bus crate) into libexec, compiles the Go
+# CLI (`agix-core`) and the Rust bus at install time, and exposes a thin `agix` wrapper
+# on PATH. ZERO Node: no `node` dependency, no `.mjs`, no vendored `node_modules`.
 #
-# PUBLISH (operator-gated): set `url`/`homepage` to the real public release host,
-# keep `sha256` in sync with the published tarball (the build script prints both),
-# add a matching root LICENSE, then push this formula to the public tap
-# (e.g. `brew tap agix-ai/agix && brew install agix-aos`). See scripts/release/README.md.
+# PUBLISH (operator-gated): the reborn public repo is born from an orphan-root of the
+# Go/TS/Rust tree (see docs/reborn/REBORN-EXECUTION-SPEC.md). Point `url`/`homepage` at
+# the real public release host, set `sha256` from the published reborn tarball, add a
+# matching root LICENSE, then push this formula to the public tap
+# (e.g. `brew tap agix-ai/agix && brew install agix-aos`).
 class AgixAos < Formula
-  desc "Agix AOS — the agix CLI and agent fleet (agentic operating system)"
+  desc "Agix AOS — the agix CLI (Go) + TypeScript agent fleet (agentic operating system)"
   homepage "https://github.com/agix-ai/agix-aos"
-  url "https://github.com/agix-ai/homebrew-agix/releases/download/v0.2.2/agix-aos-0.2.2.tar.gz"
-  version "0.2.2"
-  sha256 "8c7d243e3644da2ec9979938dafee087560e60be31a45a3e282cc363234b670d"
+
+  # Reborn Go/TS/Rust artifact (v0.1.0 — the fresh reborn baseline; matches the
+  # `agix-core` binary constant in core/cmd/agix-core/main.go). Built from the staged
+  # public tree by scripts/release/stage-reborn-public.sh.
+  # OPERATOR: `url` assumes the release asset is attached to the `v0.1.0` tag of the
+  # public repo agix-ai/agix-aos. If you host the tarball elsewhere (e.g. the
+  # homebrew-agix tap release), update `url` to match. The `sha256` below is the hash of
+  # dist/agix-aos-0.1.0.tar.gz — upload THAT exact file. If you rebuild the tarball,
+  # recompute: `shasum -a 256 dist/agix-aos-0.1.0.tar.gz`. (The copy of this formula
+  # that rides inside the tarball necessarily can't carry its own post-build hash — the
+  # tap copy of this formula is what `brew` verifies against, and it is authoritative.)
+  url "https://github.com/agix-ai/agix-aos/releases/download/v0.1.0/agix-aos-0.1.0.tar.gz"
+  version "0.1.0"
+  sha256 "1fb7d81414430aa324672e9ab106dd3f9aa459b30823fbac713c11a67331369a"
   license "Apache-2.0"
 
-  depends_on "node"
-  # The bus daemon (lewis-aos-bus) ships as Rust SOURCE, not a prebuilt binary (cross-arch +
-  # avoids shipping a huge arch-specific target/). We compile it at install time. Build-time
-  # only — Rust is not needed to RUN the pack.
+  # Build-time toolchains: Go compiles the `agix-core` CLI + the Go core; Rust compiles
+  # the `lewis-aos-bus` intra-agent bus from SOURCE (cross-arch, no prebuilt binary).
+  # Neither is needed to RUN the pack afterwards.
+  depends_on "go" => :build
   depends_on "rust" => :build
+  # Runtime: the TypeScript agent fleet (fleet/ + agents/*.ts) runs on Bun — NOT Node.
+  depends_on "bun"
 
   def install
     libexec.install Dir["*"]
 
-    # Build the bus daemon from the shipped source so `agix swarm` / `agix agent serve` work
-    # from the installed pack. The source was just moved into libexec by the install above, so
-    # build there. We move the freshly-built binary to libexec/bin/lewis-aos-bus — the stable
-    # canonical location that lib/agix-fanout.mjs ensureDaemon resolves via its sibling-install
-    # candidate (<repoRoot>/bin/lewis-aos-bus, repoRoot == libexec here).
+    # Build the Go CLI (agix-core) from the shipped source. core/ holds go.mod (the module
+    # root); the binary lands at libexec/bin/agix-core — the canonical location the `agix`
+    # wrapper execs.
+    cd libexec/"core" do
+      system "go", "build", "-o", libexec/"bin/agix-core", "./cmd/agix-core"
+    end
+
+    # Build the Rust intra-agent bus from the shipped source so `agix swarm` / `agix agent
+    # serve` work from the installed pack (too big + arch-specific to ship prebuilt; compiled
+    # at install time — Homebrew-idiomatic, cross-arch). Canonical path: libexec/bin/lewis-aos-bus.
     cd libexec/"cli/crates/lewis-aos-bus" do
       system "cargo", "build", "--release"
     end
     (libexec/"bin").install libexec/"cli/crates/lewis-aos-bus/target/release/lewis-aos-bus"
 
-    # Wrapper invokes the brew-managed node explicitly so the install is PATH-independent.
+    # Thin wrapper: `agix` execs the Go binary directly. NO Node.
+    #
+    # The wrapper MUST export AGIX_CORE_BIN and AGIX_FLEET_CLI. `agix-core agent run`
+    # delegates to the Bun fleet runner, and the TS runtime resolves the Go engine back
+    # as `AGIX_CORE_BIN ?? "agix-core" on PATH` (fleet/runtime/engine.ts, comb.ts). Only
+    # the `agix` wrapper lands on PATH — `agix-core` itself lives in libexec — so without
+    # these exports every governed engine spawn and every Comb read fails to resolve.
+    # AGIX_FLEET_CLI is likewise required because the fleet runner is probed relative to
+    # CWD, which for an installed user is their own project, not libexec.
     (bin/"agix").write <<~SH
       #!/bin/bash
-      exec "#{Formula["node"].opt_bin}/node" "#{libexec}/bin/agix" "$@"
+      export AGIX_CORE_BIN="${AGIX_CORE_BIN:-#{libexec}/bin/agix-core}"
+      export AGIX_FLEET_CLI="${AGIX_FLEET_CLI:-#{libexec}/fleet/runtime/cli.ts}"
+      exec "#{libexec}/bin/agix-core" "$@"
     SH
   end
 
@@ -62,6 +93,10 @@ class AgixAos < Formula
   end
 
   test do
-    assert_match "agix #{version}", shell_output("#{bin}/agix --version")
+    # The wrapper execs the Go CLI, which prints `agix-core <v>` from its constant in
+    # core/cmd/agix-core/main.go. This formula (0.1.0) and the Go binary (0.1.0) now
+    # agree (CHANGELOG.md now leads with the reborn [0.1.0] entry). If you bump the
+    # reborn version, bump the Go constant too so this assertion stays honest.
+    assert_match "agix-core #{version}", shell_output("#{bin}/agix --version")
   end
 end
